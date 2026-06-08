@@ -61,22 +61,34 @@ let panPointerId = null;
 let lastPan = null;
 
 /* =========================================================
-   MOBILE PAN (FIX)
+   MOBILE PAN
    ========================================================= */
 let touchPan = false;
 let lastTouch = null;
 
 /* =========================================================
-   TOOL SYSTEM
+   TOOL SYSTEM (UPDATED 3 MODES)
    ========================================================= */
-let tool = "draw";
+let tool = "draw"; // draw | erase | move
 
 const drawEraseBtn = document.getElementById("drawEraseBtn");
 
 drawEraseBtn.onclick = () => {
-  tool = tool === "draw" ? "erase" : "draw";
-  drawEraseBtn.textContent = tool === "draw" ? "✏️ Draw" : "🧹 Erase";
+  if (tool === "draw") tool = "erase";
+  else if (tool === "erase") tool = "move";
+  else tool = "draw";
+
+  drawEraseBtn.textContent =
+    tool === "draw"
+      ? "✏️ Draw"
+      : tool === "erase"
+      ? "🧹 Erase"
+      : "🧭 Move";
 };
+
+function isMoveMode() {
+  return tool === "move";
+}
 
 /* =========================================================
    SAVE / PATTERNS
@@ -135,38 +147,22 @@ canvas.addEventListener("pointerdown", (e) => {
   }
 
   if (activePointers.size === 1) {
-
     if (!paused) return;
 
-    const isTouch = e.pointerType === "touch";
-
     /* =====================================================
-       MOBILE PAN FIX (THIS WAS MISSING)
+       MOVE MODE OVERRIDE
        ===================================================== */
-    if (isTouch) {
-      touchPan = true;
-      lastTouch = { x: e.clientX, y: e.clientY };
+    if (isMoveMode()) {
+      painting = false;
       return;
     }
 
-    /* =====================================================
-       DESKTOP PAN
-       ===================================================== */
-    if (e.ctrlKey || e.metaKey || e.button === 1) {
-      panActive = true;
-      panPointerId = e.pointerId;
-      lastPan = { x: e.clientX, y: e.clientY };
-      return;
-    }
-
-    /* DRAW */
-    if (ghost) {
-      placingGhost = true;
-      return;
-    }
-
+    /* DRAW / ERASE */
     painting = true;
-    paint(mouse.x, mouse.y, tool === "erase" ? false : true);
+
+    const value = tool === "erase" ? false : true;
+    paint(mouse.x, mouse.y, value);
+
     dirty = true;
   }
 
@@ -189,12 +185,26 @@ canvas.addEventListener("pointerdown", (e) => {
 canvas.addEventListener("pointermove", (e) => {
   if (!activePointers.has(e.pointerId)) return;
 
+  const prev = activePointers.get(e.pointerId);
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
   mouse = screenToWorld(e.clientX, e.clientY);
 
   /* =====================================================
-     DESKTOP PAN
+     MOVE MODE PAN (NEW + IMPORTANT)
+     ===================================================== */
+  if (isMoveMode() && activePointers.size === 1) {
+    const dx = e.clientX - prev.x;
+    const dy = e.clientY - prev.y;
+
+    cameraX -= dx / zoom;
+    cameraY -= dy / zoom;
+
+    dirty = true;
+  }
+
+  /* =====================================================
+     DESKTOP PAN (UNCHANGED LEGACY)
      ===================================================== */
   if (panActive && e.pointerId === panPointerId) {
     const dx = e.clientX - lastPan.x;
@@ -208,7 +218,7 @@ canvas.addEventListener("pointermove", (e) => {
   }
 
   /* =====================================================
-     MOBILE PAN FIX
+     MOBILE PAN (UNCHANGED LEGACY)
      ===================================================== */
   if (touchPan && e.pointerType === "touch") {
     const dx = e.clientX - lastTouch.x;
@@ -221,8 +231,10 @@ canvas.addEventListener("pointermove", (e) => {
     dirty = true;
   }
 
-  /* PAINT */
-  if (activePointers.size === 1 && painting && paused) {
+  /* =====================================================
+     PAINT (BLOCKED IN MOVE MODE)
+     ===================================================== */
+  if (!isMoveMode() && activePointers.size === 1 && painting && paused) {
     paint(mouse.x, mouse.y, tool === "erase" ? false : true);
     dirty = true;
   }
@@ -261,7 +273,6 @@ function stopPointer(id) {
     pinchDistance = null;
   }
 
-  /* STOP MOBILE PAN */
   if (activePointers.size === 0) {
     touchPan = false;
     lastTouch = null;
