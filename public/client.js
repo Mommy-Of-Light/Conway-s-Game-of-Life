@@ -54,20 +54,12 @@ let pinchDistance = null;
 let mouse = { x: 0, y: 0 };
 
 /* =========================================================
-   DESKTOP PAN
+   FIX: AUTHORITATIVE DRAG CURSOR
    ========================================================= */
-let panActive = false;
-let panPointerId = null;
-let lastPan = null;
+let dragMouse = { x: 0, y: 0 };
 
 /* =========================================================
-   MOBILE PAN
-   ========================================================= */
-let touchPan = false;
-let lastTouch = null;
-
-/* =========================================================
-   TOOL SYSTEM (UPDATED 3 MODES)
+   TOOL SYSTEM
    ========================================================= */
 let tool = "draw"; // draw | erase | move
 
@@ -79,11 +71,7 @@ drawEraseBtn.onclick = () => {
   else tool = "draw";
 
   drawEraseBtn.textContent =
-    tool === "draw"
-      ? "✏️ Draw"
-      : tool === "erase"
-      ? "🧹 Erase"
-      : "🧭 Move";
+    tool === "draw" ? "✏️ Draw" : tool === "erase" ? "🧹 Erase" : "🧭 Move";
 };
 
 function isMoveMode() {
@@ -99,6 +87,7 @@ let selectionEnd = null;
 
 let ghost = null;
 let placingGhost = false;
+let placingPattern = false;
 
 /* =========================================================
    UI
@@ -134,11 +123,14 @@ ws.onmessage = (e) => {
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 canvas.addEventListener("pointerdown", (e) => {
-  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  try {
+    canvas.setPointerCapture(e.pointerId);
+  } catch {}
 
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
   mouse = screenToWorld(e.clientX, e.clientY);
+  dragMouse = mouse; // ✅ FIX
 
   /* SAVE MODE */
   if (saveMode && activePointers.size === 1) {
@@ -146,18 +138,22 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
 
+  /* ================================
+     START PATTERN PLACEMENT
+     ================================ */
+  if (ghost && paused && activePointers.size === 1) {
+    placingPattern = true;
+    return;
+  }
+
   if (activePointers.size === 1) {
     if (!paused) return;
 
-    /* =====================================================
-       MOVE MODE OVERRIDE
-       ===================================================== */
     if (isMoveMode()) {
       painting = false;
       return;
     }
 
-    /* DRAW / ERASE */
     painting = true;
 
     const value = tool === "erase" ? false : true;
@@ -189,10 +185,8 @@ canvas.addEventListener("pointermove", (e) => {
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
   mouse = screenToWorld(e.clientX, e.clientY);
+  dragMouse = mouse; // ✅ FIX: ALWAYS TRACK LATEST CURSOR
 
-  /* =====================================================
-     MOVE MODE PAN (NEW + IMPORTANT)
-     ===================================================== */
   if (isMoveMode() && activePointers.size === 1) {
     const dx = e.clientX - prev.x;
     const dy = e.clientY - prev.y;
@@ -203,43 +197,11 @@ canvas.addEventListener("pointermove", (e) => {
     dirty = true;
   }
 
-  /* =====================================================
-     DESKTOP PAN (UNCHANGED LEGACY)
-     ===================================================== */
-  if (panActive && e.pointerId === panPointerId) {
-    const dx = e.clientX - lastPan.x;
-    const dy = e.clientY - lastPan.y;
-
-    cameraX -= dx / zoom;
-    cameraY -= dy / zoom;
-
-    lastPan = { x: e.clientX, y: e.clientY };
-    dirty = true;
-  }
-
-  /* =====================================================
-     MOBILE PAN (UNCHANGED LEGACY)
-     ===================================================== */
-  if (touchPan && e.pointerType === "touch") {
-    const dx = e.clientX - lastTouch.x;
-    const dy = e.clientY - lastTouch.y;
-
-    cameraX -= dx / zoom;
-    cameraY -= dy / zoom;
-
-    lastTouch = { x: e.clientX, y: e.clientY };
-    dirty = true;
-  }
-
-  /* =====================================================
-     PAINT (BLOCKED IN MOVE MODE)
-     ===================================================== */
   if (!isMoveMode() && activePointers.size === 1 && painting && paused) {
     paint(mouse.x, mouse.y, tool === "erase" ? false : true);
     dirty = true;
   }
 
-  /* PINCH */
   if (activePointers.size === 2 && panning) {
     const pts = [...activePointers.values()];
 
@@ -262,26 +224,22 @@ canvas.addEventListener("pointermove", (e) => {
 function stopPointer(id) {
   activePointers.delete(id);
 
-  if (panPointerId === id) {
-    panActive = false;
-    panPointerId = null;
-    lastPan = null;
-  }
-
   if (activePointers.size < 2) {
     panning = false;
     pinchDistance = null;
   }
 
   if (activePointers.size === 0) {
-    touchPan = false;
-    lastTouch = null;
-
     painting = false;
 
-    if (placingGhost && ghost) {
-      placeGhost(mouse);
+    /* ================================
+       PLACE PATTERN ON RELEASE
+       ================================ */
+    if (placingPattern && ghost) {
+      placeGhost(dragMouse); // ✅ FIX
+
       ghost = null;
+      placingPattern = false;
       placingGhost = false;
     }
 
@@ -291,6 +249,31 @@ function stopPointer(id) {
 
 canvas.addEventListener("pointerup", (e) => stopPointer(e.pointerId));
 canvas.addEventListener("pointercancel", (e) => stopPointer(e.pointerId));
+
+/* =========================================================
+   WHEEL ZOOM
+   ========================================================= */
+canvas.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+
+    const before = screenToWorld(e.clientX, e.clientY);
+
+    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+    zoom *= zoomFactor;
+
+    zoom = Math.max(0.05, Math.min(80, zoom));
+
+    const after = screenToWorld(e.clientX, e.clientY);
+
+    cameraX += before.x - after.x;
+    cameraY += before.y - after.y;
+
+    dirty = true;
+  },
+  { passive: false }
+);
 
 /* =========================================================
    CORE ACTIONS
@@ -338,16 +321,11 @@ function handleSaveSelection(mouse) {
 async function finishPatternSave(name) {
   const minX = Math.min(selectionStart.x, selectionEnd.x);
   const maxX = Math.max(selectionStart.x, selectionEnd.x);
-  const minY = Math.max(selectionStart.y, selectionEnd.y);
+  const minY = Math.min(selectionStart.y, selectionEnd.y);
 
   const selected = cells
-    .filter(c =>
-      c.x >= minX &&
-      c.x <= maxX &&
-      c.y >= minY &&
-      c.y <= maxY
-    )
-    .map(c => ({
+    .filter((c) => c.x >= minX && c.x <= maxX && c.y >= minY && c.y <= maxY)
+    .map((c) => ({
       x: c.x - minX,
       y: c.y - minY,
     }));
@@ -388,13 +366,41 @@ window.loadPattern = async () => {
   const res = await fetch(`/load?name=${name}`);
   const data = await res.json();
 
-  const minX = Math.min(...data.map(p => p.x));
-  const minY = Math.min(...data.map(p => p.y));
+  const minX = Math.min(...data.map((p) => p.x));
+  const minY = Math.min(...data.map((p) => p.y));
 
-  ghost = data.map(p => ({
+  ghost = data.map((p) => ({
     x: p.x - minX,
     y: p.y - minY,
   }));
+
+  placingGhost = true;
+  placingPattern = false;
+
+  paused = true;
+};
+
+/* =========================================================
+   ROTATE + DELETE
+   ========================================================= */
+window.rotatePattern = function () {
+  if (!ghost) return;
+
+  ghost = ghost.map((p) => ({
+    x: -p.y,
+    y: p.x,
+  }));
+};
+
+window.deletePattern = async function () {
+  const name = select.value;
+  if (!name) return;
+
+  await fetch(`/deletePattern?name=${name}`, {
+    method: "DELETE",
+  });
+
+  refreshPatterns();
 };
 
 /* =========================================================
@@ -424,12 +430,14 @@ clearBtn.onclick = () => ws.send(JSON.stringify({ type: "reset" }));
 
 randomBtn.onclick = () => {
   for (let i = 0; i < 300; i++) {
-    ws.send(JSON.stringify({
-      type: "set",
-      x: Math.floor(cameraX + (Math.random() - 0.5) * 60),
-      y: Math.floor(cameraY + (Math.random() - 0.5) * 60),
-      value: true,
-    }));
+    ws.send(
+      JSON.stringify({
+        type: "set",
+        x: Math.floor(cameraX + (Math.random() - 0.5) * 60),
+        y: Math.floor(cameraY + (Math.random() - 0.5) * 60),
+        value: true,
+      })
+    );
   }
 };
 
@@ -445,7 +453,7 @@ speedRange.addEventListener("change", () => {
 });
 
 /* =========================================================
-   RENDER LOOP (SAFE START)
+   RENDER LOOP
    ========================================================= */
 function startRender() {
   if (started) return;
@@ -492,10 +500,11 @@ function render() {
   }
 
   /* GHOST */
-  if (ghost && paused) {
+  if (ghost && paused && placingPattern) {
     ctx.fillStyle = "rgba(0,255,255,0.4)";
+
     for (const p of ghost) {
-      const s = worldToScreen(mouse.x + p.x, mouse.y + p.y);
+      const s = worldToScreen(dragMouse.x + p.x, dragMouse.y + p.y);
       ctx.fillRect(s.x, s.y, Math.max(1, zoom), Math.max(1, zoom));
     }
   }
@@ -525,27 +534,13 @@ setTimeout(startRender, isMobile ? 200 : 0);
 /* =========================================================
    LEGACY (UNCHANGED)
    ========================================================= */
-/*
-window.addEventListener("mousemove", (e) => {
-  mouse = screenToWorld(e.clientX, e.clientY);
+// window.addEventListener("mousemove", (e) => {
+//   mouse = screenToWorld(e.clientX, e.clientY);
+// });
 
-  if (panning) {
-    cameraX -= (e.clientX - lastX) / zoom;
-    cameraY -= (e.clientY - lastY) / zoom;
+// canvas.addEventListener("mousedown", (e) => {
+//   mouse = screenToWorld(e.clientX, e.clientY);
 
-    lastX = e.clientX;
-    lastY = e.clientY;
-  }
-
-  if (painting && paused) {
-    paint(mouse.x, mouse.y, true);
-  }
-});
-
-canvas.addEventListener("mousedown", (e) => {
-  mouse = screenToWorld(e.clientX, e.clientY);
-
-  if (e.button === 0) paint(mouse.x, mouse.y, true);
-  if (e.button === 2) paint(mouse.x, mouse.y, false);
-});
-*/
+//   if (e.button === 0) paint(mouse.x, mouse.y, true);
+//   if (e.button === 2) paint(mouse.x, mouse.y, false);
+// });y
