@@ -36,16 +36,10 @@ let tool = "draw";
 const drawEraseBtn = document.getElementById("drawEraseBtn");
 
 drawEraseBtn.onclick = () => {
-  tool = tool === "draw"
-    ? "erase"
-    : tool === "erase"
-      ? "move"
-      : "draw";
+  tool = tool === "draw" ? "erase" : tool === "erase" ? "move" : "draw";
 
   drawEraseBtn.textContent =
-    tool === "draw" ? "✏️ Draw" :
-    tool === "erase" ? "🧹 Erase" :
-    "🧭 Move";
+    tool === "draw" ? "✏️ Draw" : tool === "erase" ? "🧹 Erase" : "🧭 Move";
 };
 
 const isMoveMode = () => tool === "move";
@@ -54,6 +48,7 @@ const isMoveMode = () => tool === "move";
    PATTERNS
 ========================= */
 let saveMode = false;
+let saveStep = 0;
 let selectionStart = null;
 let selectionEnd = null;
 
@@ -76,7 +71,7 @@ const hud = document.getElementById("hud");
    WS
 ========================= */
 const ws = new WebSocket(
-  `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`
+  `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`,
 );
 
 ws.onmessage = (e) => {
@@ -146,7 +141,7 @@ function placeGhost(pos) {
 /* =========================
    POINTER INPUT
 ========================= */
-canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture?.(e.pointerId);
@@ -155,9 +150,18 @@ canvas.addEventListener("pointerdown", (e) => {
 
   mouse = screenToWorld(e.clientX, e.clientY);
 
-  if (saveMode && activePointers.size === 1) {
-    handleSaveSelection(mouse);
-    return;
+  if (saveMode) {
+    if (saveStep === 0) {
+      selectionStart = mouse;
+      saveStep = 1;
+      return;
+    }
+
+    if (saveStep === 1) {
+      selectionEnd = mouse;
+      handleSaveFinish();
+      return;
+    }
   }
 
   if (ghost && paused && activePointers.size === 1) {
@@ -177,10 +181,7 @@ canvas.addEventListener("pointerdown", (e) => {
     panning = true;
 
     const pts = [...activePointers.values()];
-    pinchDistance = Math.hypot(
-      pts[1].x - pts[0].x,
-      pts[1].y - pts[0].y
-    );
+    pinchDistance = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
   }
 });
 
@@ -234,29 +235,33 @@ function stopPointer(id) {
 
     viewDirty = true;
   }
-};
+}
 
-canvas.addEventListener("pointerup", e => stopPointer(e.pointerId));
-canvas.addEventListener("pointercancel", e => stopPointer(e.pointerId));
+canvas.addEventListener("pointerup", (e) => stopPointer(e.pointerId));
+canvas.addEventListener("pointercancel", (e) => stopPointer(e.pointerId));
 
 /* =========================
    ZOOM
 ========================= */
-canvas.addEventListener("wheel", (e) => {
-  e.preventDefault();
+canvas.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
 
-  const before = screenToWorld(e.clientX, e.clientY);
+    const before = screenToWorld(e.clientX, e.clientY);
 
-  zoom *= e.deltaY > 0 ? 0.9 : 1.1;
-  zoom = Math.max(0.05, Math.min(80, zoom));
+    zoom *= e.deltaY > 0 ? 0.9 : 1.1;
+    zoom = Math.max(0.05, Math.min(80, zoom));
 
-  const after = screenToWorld(e.clientX, e.clientY);
+    const after = screenToWorld(e.clientX, e.clientY);
 
-  cameraX += before.x - after.x;
-  cameraY += before.y - after.y;
+    cameraX += before.x - after.x;
+    cameraY += before.y - after.y;
 
-  viewDirty = true;
-}, { passive: false });
+    viewDirty = true;
+  },
+  { passive: false },
+);
 
 /* =========================
    BUTTONS
@@ -268,12 +273,14 @@ clearBtn.onclick = () => ws.send(JSON.stringify({ type: "reset" }));
 
 randomBtn.onclick = () => {
   for (let i = 0; i < 300; i++) {
-    ws.send(JSON.stringify({
-      type: "set",
-      x: Math.floor(cameraX + (Math.random() - 0.5) * 60),
-      y: Math.floor(cameraY + (Math.random() - 0.5) * 60),
-      value: true
-    }));
+    ws.send(
+      JSON.stringify({
+        type: "set",
+        x: Math.floor(cameraX + (Math.random() - 0.5) * 60),
+        y: Math.floor(cameraY + (Math.random() - 0.5) * 60),
+        value: true,
+      }),
+    );
   }
 };
 
@@ -284,7 +291,7 @@ speedRange.addEventListener("change", () => {
   fetch("/changeRefreshTime", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ time: speedRange.value })
+    body: JSON.stringify({ time: speedRange.value }),
   });
 });
 
@@ -312,12 +319,12 @@ window.loadPattern = async () => {
   const res = await fetch(`/load?name=${name}`);
   const data = await res.json();
 
-  const minX = Math.min(...data.map(p => p.x));
-  const minY = Math.min(...data.map(p => p.y));
+  const minX = Math.min(...data.map((p) => p.x));
+  const minY = Math.min(...data.map((p) => p.y));
 
-  ghost = data.map(p => ({
+  ghost = data.map((p) => ({
     x: p.x - minX,
-    y: p.y - minY
+    y: p.y - minY,
   }));
 
   placingPattern = false;
@@ -327,9 +334,9 @@ window.loadPattern = async () => {
 window.rotatePattern = () => {
   if (!ghost) return;
 
-  ghost = ghost.map(p => ({
+  ghost = ghost.map((p) => ({
     x: -p.y,
-    y: p.x
+    y: p.x,
   }));
 };
 
@@ -346,47 +353,60 @@ window.deletePattern = async () => {
 ========================= */
 window.savePattern = () => {
   saveMode = true;
+  saveStep = 0;
   selectionStart = null;
   selectionEnd = null;
-  alert("Click FIRST corner, then SECOND corner.");
+
+  alert("Tap first corner, then second corner");
 };
 
-function handleSaveSelection(mouse) {
-  if (!selectionStart) {
-    selectionStart = mouse;
-    return;
-  }
-
-  selectionEnd = mouse;
-
+async function handleSaveFinish() {
   const name = prompt("Pattern name?");
   if (!name) {
     saveMode = false;
+    saveStep = 0;
     return;
   }
 
-  finishPatternSave(name);
+  const minX = Math.min(selectionStart.x, selectionEnd.x);
+  const maxX = Math.max(selectionStart.x, selectionEnd.x);
+  const minY = Math.min(selectionStart.y, selectionEnd.y);
+  const maxY = Math.max(selectionStart.y, selectionEnd.y);
+
+  const selected = cells
+    .filter((c) => c.x >= minX && c.x <= maxX && c.y >= minY && c.y <= maxY)
+    .map((c) => ({
+      x: c.x - minX,
+      y: c.y - minY,
+    }));
+
+  await fetch("/savePattern", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, cells: selected }),
+  });
+
+  saveMode = false;
+  saveStep = 0;
+  refreshPatterns();
 }
 
 async function finishPatternSave(name) {
   const minX = Math.min(selectionStart.x, selectionEnd.x);
   const maxX = Math.max(selectionStart.x, selectionEnd.x);
   const minY = Math.min(selectionStart.y, selectionEnd.y);
-
+  const maxY = Math.max(selectionStart.y, selectionEnd.y);
   const selected = cells
-    .filter(c =>
-      c.x >= minX && c.x <= maxX &&
-      c.y >= minY && c.y <= maxY
-    )
-    .map(c => ({
+    .filter((c) => c.x >= minX && c.x <= maxX && c.y >= minY && c.y <= maxY)
+    .map((c) => ({
       x: c.x - minX,
-      y: c.y - minY
+      y: c.y - minY,
     }));
 
   await fetch("/savePattern", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, cells: selected })
+    body: JSON.stringify({ name, cells: selected }),
   });
 
   saveMode = false;
@@ -396,16 +416,16 @@ async function finishPatternSave(name) {
 /* =========================
    LEGACY CONTROLS (RESTORED)
 ========================= */
-  // addEventListener("mousemove", (e) => {
-  //   mouse = screenToWorld(e.clientX, e.clientY);
-  // });
+// addEventListener("mousemove", (e) => {
+//   mouse = screenToWorld(e.clientX, e.clientY);
+// });
 
-  // addEventListener("mousedown", (e) => {
-  //   mouse = screenToWorld(e.clientX, e.clientY);
+// addEventListener("mousedown", (e) => {
+//   mouse = screenToWorld(e.clientX, e.clientY);
 
-  //   if (e.button === 0) paint(mouse.x, mouse.y, true);
-  //   if (e.button === 2) paint(mouse.x, mouse.y, false);
-  // });
+//   if (e.button === 0) paint(mouse.x, mouse.y, true);
+//   if (e.button === 2) paint(mouse.x, mouse.y, false);
+// });
 
 /* =========================
    RENDER LOOP
@@ -471,8 +491,7 @@ function drawGhost() {
 }
 
 function drawHUD() {
-  hud.textContent =
-`Tool: ${tool}
+  hud.textContent = `Tool: ${tool}
 Mouse: (${mouse.x}, ${mouse.y})
 Camera: (${cameraX.toFixed(1)}, ${cameraY.toFixed(1)})
 Zoom: ${zoom.toFixed(2)}x`;
