@@ -429,7 +429,13 @@ speedRange.addEventListener("change", () => {
 function render() {
   frame++;
 
-  if (!dirty && isMobile && frame % 3 !== 0) {
+  /* keep rendering stable — no "on/off flashing" */
+  const skip =
+    isMobile &&
+    frame % 2 === 0 &&
+    !dirty;
+
+  if (skip) {
     requestAnimationFrame(render);
     return;
   }
@@ -438,23 +444,41 @@ function render() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  /* GRID (light throttled) */
-  if (zoom > 6 && (!isMobile || frame % 6 === 0)) {
+  /* =========================
+     GRID (FIXED BOTH AXES)
+     ========================= */
+  if (zoom > 6) {
     ctx.strokeStyle = "#222";
 
     const left = cameraX - canvas.width / (2 * zoom);
     const right = cameraX + canvas.width / (2 * zoom);
+    const top = cameraY - canvas.height / (2 * zoom);
+    const bottom = cameraY + canvas.height / (2 * zoom);
 
+    /* VERTICAL LINES */
     for (let x = Math.floor(left); x <= Math.ceil(right); x++) {
       const sx = worldToScreen(x, 0).x;
+
       ctx.beginPath();
       ctx.moveTo(sx, 0);
       ctx.lineTo(sx, canvas.height);
       ctx.stroke();
     }
+
+    /* HORIZONTAL LINES (FIXED MISSING PART) */
+    for (let y = Math.floor(top); y <= Math.ceil(bottom); y++) {
+      const sy = worldToScreen(0, y).y;
+
+      ctx.beginPath();
+      ctx.moveTo(0, sy);
+      ctx.lineTo(canvas.width, sy);
+      ctx.stroke();
+    }
   }
 
-  /* GHOST */
+  /* =========================
+     GHOST
+     ========================= */
   if (ghost && paused && placingPattern) {
     ctx.fillStyle = "rgba(0,255,255,0.4)";
 
@@ -464,19 +488,22 @@ function render() {
     }
   }
 
-  /* CELLS (mobile cap) */
-  const limit = isMobile ? 2500 : cells.length;
+  /* =========================
+     CELLS (SAFE MOBILE CAP)
+     ========================= */
+  const limit = isMobile ? Math.min(cells.length, 3000) : cells.length;
 
   ctx.fillStyle = "#00ff88";
 
   for (let i = 0; i < limit; i++) {
     const c = cells[i];
-    if (!c) break;
-
     const p = worldToScreen(c.x, c.y);
     ctx.fillRect(p.x, p.y, Math.max(1, zoom), Math.max(1, zoom));
   }
 
+  /* =========================
+     HUD
+     ========================= */
   hud.innerHTML = `
     Tool: ${tool}<br/>
     Mouse: (${mouse.x}, ${mouse.y})<br/>
