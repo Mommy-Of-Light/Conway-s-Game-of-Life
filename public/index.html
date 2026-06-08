@@ -1,0 +1,54 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>Life Editor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div id="ui">
+    <div class="panel">
+
+      <div class="group">
+        <button id="playPauseBtn">▶</button>
+        <button id="stepBtn">⏭</button>
+        <button id="resetBtn">⟲</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="group">
+        <label>Speed</label>
+        <input type="range" id="speedRange" min="10" max="1000" value="100" />
+      </div>
+
+      <div class="divider"></div>
+      <div class="group">
+        <select id="patternSelect"></select>
+        <button onclick="loadPattern()">Load</button>
+        <button onclick="savePattern()">Save</button>
+        <button onclick="rotatePattern()">Rotate</button>
+        <button onclick="deletePattern()">Delete</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="group">
+        <button id="clearBtn">Clear</button>
+        <button id="randomBtn">Random</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="hud"></div>
+
+  <canvas id="canvas"></canvas>
+
+  <script src="client.js"></script>
+</body>
+
+</html>

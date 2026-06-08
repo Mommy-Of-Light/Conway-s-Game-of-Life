@@ -1,0 +1,124 @@
+/* style.css */
+html, body {
+  margin: 0;
+  overflow: hidden;
+  background: #0b0f14;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+/* canvas fills screen */
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+/* UI wrapper */
+#ui {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+}
+
+/* main panel */
+.panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 10px 12px;
+  border-radius: 12px;
+
+  background: rgba(20, 25, 32, 0.75);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+/* grouped controls */
+.group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* visual separator */
+.divider {
+  width: 1px;
+  height: 26px;
+  background: rgba(255,255,255,0.1);
+}
+
+/* buttons */
+button {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #e6e6e6;
+
+  padding: 6px 10px;
+  border-radius: 8px;
+
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+
+button:hover {
+  background: rgba(255,255,255,0.12);
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(0px);
+}
+
+/* select styling */
+select {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #e6e6e6;
+
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+/* speed slider */
+input[type="range"] {
+  width: 120px;
+}
+
+#hud {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  z-index: 20;
+
+  padding: 8px 10px;
+  border-radius: 10px;
+
+  background: rgba(20, 25, 32, 0.75);
+  border: 1px solid rgba(255,255,255,0.08);
+
+  color: #cfe3ff;
+  font-family: monospace;
+  font-size: 12px;
+
+  pointer-events: none; /* important: don't block canvas clicks */
+}
+
+@media (max-width: 900px) {
+
+  .panel {
+    flex-wrap: wrap;
+    max-width: calc(100vw - 24px);
+  }
+
+  button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  select {
+    max-width: 120px;
+  }
+}
