@@ -32,7 +32,7 @@ window.addEventListener("resize", resize);
    WS
 ========================= */
 const ws = new WebSocket(
-  `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`
+  `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`,
 );
 
 /* =========================
@@ -64,11 +64,7 @@ drawEraseBtn.onclick = () => {
   tool = tool === "draw" ? "erase" : tool === "erase" ? "move" : "draw";
 
   drawEraseBtn.textContent =
-    tool === "draw"
-      ? "✏️ Draw"
-      : tool === "erase"
-      ? "🧹 Erase"
-      : "🧭 Move";
+    tool === "draw" ? "✏️ Draw" : tool === "erase" ? "🧹 Erase" : "🧭 Move";
 };
 
 const isMoveMode = () => tool === "move";
@@ -150,10 +146,7 @@ canvas.addEventListener("pointerdown", (e) => {
     panning = true;
 
     const pts = [...activePointers.values()];
-    pinchDistance = Math.hypot(
-      pts[1].x - pts[0].x,
-      pts[1].y - pts[0].y
-    );
+    pinchDistance = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
   }
 });
 
@@ -182,10 +175,7 @@ canvas.addEventListener("pointermove", (e) => {
   if (activePointers.size === 2 && panning) {
     const pts = [...activePointers.values()];
 
-    const dist = Math.hypot(
-      pts[1].x - pts[0].x,
-      pts[1].y - pts[0].y
-    );
+    const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
 
     zoom *= dist / pinchDistance;
     zoom = Math.max(0.05, Math.min(80, zoom));
@@ -244,7 +234,7 @@ canvas.addEventListener(
 
     dirty = true;
   },
-  { passive: false }
+  { passive: false },
 );
 
 /* =========================
@@ -296,13 +286,8 @@ async function finishPatternSave(name) {
   const minY = Math.min(selectionStart.y, selectionEnd.y);
 
   const selected = cells
-    .filter(c =>
-      c.x >= minX &&
-      c.x <= maxX &&
-      c.y >= minY &&
-      c.y <= maxY
-    )
-    .map(c => ({
+    .filter((c) => c.x >= minX && c.x <= maxX && c.y >= minY && c.y <= maxY)
+    .map((c) => ({
       x: c.x - minX,
       y: c.y - minY,
     }));
@@ -343,10 +328,10 @@ window.loadPattern = async () => {
   const res = await fetch(`/load?name=${name}`);
   const data = await res.json();
 
-  const minX = Math.min(...data.map(p => p.x));
-  const minY = Math.min(...data.map(p => p.y));
+  const minX = Math.min(...data.map((p) => p.x));
+  const minY = Math.min(...data.map((p) => p.y));
 
-  ghost = data.map(p => ({
+  ghost = data.map((p) => ({
     x: p.x - minX,
     y: p.y - minY,
   }));
@@ -361,7 +346,7 @@ window.loadPattern = async () => {
 window.rotatePattern = function () {
   if (!ghost) return;
 
-  ghost = ghost.map(p => ({
+  ghost = ghost.map((p) => ({
     x: -p.y,
     y: p.x,
   }));
@@ -403,12 +388,14 @@ clearBtn.onclick = () => ws.send(JSON.stringify({ type: "reset" }));
 
 randomBtn.onclick = () => {
   for (let i = 0; i < 300; i++) {
-    ws.send(JSON.stringify({
-      type: "set",
-      x: Math.floor(cameraX + (Math.random() - 0.5) * 60),
-      y: Math.floor(cameraY + (Math.random() - 0.5) * 60),
-      value: true,
-    }));
+    ws.send(
+      JSON.stringify({
+        type: "set",
+        x: Math.floor(cameraX + (Math.random() - 0.5) * 60),
+        y: Math.floor(cameraY + (Math.random() - 0.5) * 60),
+        value: true,
+      }),
+    );
   }
 };
 
@@ -429,13 +416,10 @@ speedRange.addEventListener("change", () => {
 function render() {
   frame++;
 
-  /* keep rendering stable — no "on/off flashing" */
-  const skip =
-    isMobile &&
-    frame % 2 === 0 &&
-    !dirty;
+  const throttle =
+    isMobile && frame % 2 === 0;
 
-  if (skip) {
+  if (throttle && !dirty) {
     requestAnimationFrame(render);
     return;
   }
@@ -444,74 +428,80 @@ function render() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  /* =========================
-     GRID (FIXED BOTH AXES)
-     ========================= */
-  if (zoom > 6) {
-    ctx.strokeStyle = "#222";
+  drawGrid();
+  drawCells();
+  drawGhost();
+  drawHUD();
 
-    const left = cameraX - canvas.width / (2 * zoom);
-    const right = cameraX + canvas.width / (2 * zoom);
-    const top = cameraY - canvas.height / (2 * zoom);
-    const bottom = cameraY + canvas.height / (2 * zoom);
+  requestAnimationFrame(render);
+}
 
-    /* VERTICAL LINES */
-    for (let x = Math.floor(left); x <= Math.ceil(right); x++) {
-      const sx = worldToScreen(x, 0).x;
+function drawGrid() {
+  if (zoom < 6) return;
 
-      ctx.beginPath();
-      ctx.moveTo(sx, 0);
-      ctx.lineTo(sx, canvas.height);
-      ctx.stroke();
-    }
+  ctx.strokeStyle = "#222";
 
-    /* HORIZONTAL LINES (FIXED MISSING PART) */
-    for (let y = Math.floor(top); y <= Math.ceil(bottom); y++) {
-      const sy = worldToScreen(0, y).y;
+  const left = cameraX - canvas.width / (2 * zoom);
+  const right = cameraX + canvas.width / (2 * zoom);
+  const top = cameraY - canvas.height / (2 * zoom);
+  const bottom = cameraY + canvas.height / (2 * zoom);
 
-      ctx.beginPath();
-      ctx.moveTo(0, sy);
-      ctx.lineTo(canvas.width, sy);
-      ctx.stroke();
-    }
+  ctx.beginPath();
+
+  // vertical
+  for (let x = Math.floor(left); x <= Math.ceil(right); x++) {
+    const sx = worldToScreen(x, 0).x;
+    ctx.moveTo(sx, 0);
+    ctx.lineTo(sx, canvas.height);
   }
 
-  /* =========================
-     GHOST
-     ========================= */
-  if (ghost && paused && placingPattern) {
-    ctx.fillStyle = "rgba(0,255,255,0.4)";
-
-    for (const p of ghost) {
-      const s = worldToScreen(mouse.x + p.x, mouse.y + p.y);
-      ctx.fillRect(s.x, s.y, Math.max(1, zoom), Math.max(1, zoom));
-    }
+  // horizontal
+  for (let y = Math.floor(top); y <= Math.ceil(bottom); y++) {
+    const sy = worldToScreen(0, y).y;
+    ctx.moveTo(0, sy);
+    ctx.lineTo(canvas.width, sy);
   }
 
-  /* =========================
-     CELLS (SAFE MOBILE CAP)
-     ========================= */
-  const limit = isMobile ? Math.min(cells.length, 3000) : cells.length;
+  ctx.stroke();
+}
 
+function drawCells() {
   ctx.fillStyle = "#00ff88";
 
-  for (let i = 0; i < limit; i++) {
-    const c = cells[i];
+  const left = cameraX - canvas.width / (2 * zoom);
+  const right = cameraX + canvas.width / (2 * zoom);
+  const top = cameraY - canvas.height / (2 * zoom);
+  const bottom = cameraY + canvas.height / (2 * zoom);
+
+  for (const c of cells) {
+    if (c.x < left || c.x > right || c.y < top || c.y > bottom) continue;
+
     const p = worldToScreen(c.x, c.y);
     ctx.fillRect(p.x, p.y, Math.max(1, zoom), Math.max(1, zoom));
   }
+}
 
-  /* =========================
-     HUD
-     ========================= */
-  hud.innerHTML = `
-    Tool: ${tool}<br/>
-    Mouse: (${mouse.x}, ${mouse.y})<br/>
-    Camera: (${cameraX.toFixed(1)}, ${cameraY.toFixed(1)})<br/>
-    Zoom: ${zoom.toFixed(2)}x
-  `;
+function drawGhost() {
+  if (!ghost || !paused || !placingPattern) return;
 
-  requestAnimationFrame(render);
+  ctx.fillStyle = "rgba(0,255,255,0.4)";
+
+  for (const p of ghost) {
+    const s = worldToScreen(mouse.x + p.x, mouse.y + p.y);
+    ctx.fillRect(s.x, s.y, Math.max(1, zoom), Math.max(1, zoom));
+  }
+}
+
+let hudDirty = true;
+
+function drawHUD() {
+  if (!hudDirty) return;
+  hudDirty = false;
+
+  hud.textContent = `Tool: ${tool}
+Mouse: (${mouse.x}, ${mouse.y})
+Camera: (${cameraX.toFixed(1)}, ${cameraY.toFixed(1)})
+Zoom: ${zoom.toFixed(2)}x`;
 }
 
 setTimeout(() => requestAnimationFrame(render), isMobile ? 300 : 0);
