@@ -2,16 +2,33 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
+/* =========================================================
+   DPI FIX
+   ========================================================= */
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+
+  canvas.style.width = window.innerWidth + "px";
+  canvas.style.height = window.innerHeight + "px";
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
+
 resize();
 window.addEventListener("resize", resize);
 
-const ws = new WebSocket(`ws://${location.host}`);
+/* =========================================================
+   WEBSOCKET (WS/WSS FIX)
+   ========================================================= */
+const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+const ws = new WebSocket(`${wsProtocol}//${location.host}`);
 
-// ---------------- STATE ----------------
+/* =========================================================
+   STATE
+   ========================================================= */
 let cells = [];
 let paused = false;
 
@@ -21,42 +38,53 @@ let cameraY = 0;
 
 let activePointers = new Map();
 
-let painting = false;
 let panning = false;
-let paintValue = true;
+let painting = false;
 
 let pinchDistance = null;
 let lastCenter = null;
 
 let mouse = { x: 0, y: 0 };
 
-let tool = "paint";
+/* =========================================================
+   TOOL SYSTEM (NEW)
+   ========================================================= */
+let tool = "draw"; // draw | erase
 
-// ---------------- SAVE MODE ----------------
+const drawEraseBtn = document.getElementById("drawEraseBtn");
+
+drawEraseBtn.onclick = () => {
+  tool = tool === "draw" ? "erase" : "draw";
+  drawEraseBtn.textContent = tool === "draw" ? "✏️ Draw" : "🧹 Erase";
+};
+
+/* =========================================================
+   SAVE / PATTERNS
+   ========================================================= */
 let saveMode = false;
 let selectionStart = null;
 let selectionEnd = null;
 let pendingPatternName = null;
 
-// ---------------- PATTERNS ----------------
 let patterns = [];
 let ghost = null;
 
-// ---------------- UI ----------------
+/* =========================================================
+   UI
+   ========================================================= */
 const select = document.getElementById("patternSelect");
 
 const pauseBtn = document.getElementById("playPauseBtn");
 const stepBtn = document.getElementById("stepBtn");
 const resetBtn = document.getElementById("resetBtn");
-
 const clearBtn = document.getElementById("clearBtn");
 const randomBtn = document.getElementById("randomBtn");
-
 const speedRange = document.getElementById("speedRange");
-
 const hud = document.getElementById("hud");
 
-// ---------------- WEBSOCKET ----------------
+/* =========================================================
+   WEBSOCKET STATE UPDATE
+   ========================================================= */
 ws.onmessage = (e) => {
   const msg = JSON.parse(e.data);
 
@@ -68,11 +96,15 @@ ws.onmessage = (e) => {
   }
 };
 
-// ---------------- INPUT ----------------
+/* =========================================================
+   POINTER INPUT (PRIMARY)
+   ========================================================= */
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 canvas.addEventListener("pointerdown", (e) => {
-  canvas.setPointerCapture(e.pointerId);
+  try {
+    canvas.setPointerCapture(e.pointerId);
+  } catch {}
 
   activePointers.set(e.pointerId, {
     x: e.clientX,
@@ -81,13 +113,14 @@ canvas.addEventListener("pointerdown", (e) => {
 
   mouse = screenToWorld(e.clientX, e.clientY);
 
-  // one pointer
-  if (activePointers.size === 1) {
+  /* SAVE MODE */
+  if (saveMode && activePointers.size === 1) {
+    handleSaveSelection(mouse);
+    return;
+  }
 
-    if (saveMode) {
-      handleSaveSelection(mouse);
-      return;
-    }
+  /* SINGLE POINTER */
+  if (activePointers.size === 1) {
 
     if (!paused) return;
 
@@ -97,12 +130,12 @@ canvas.addEventListener("pointerdown", (e) => {
     }
 
     painting = true;
-    paintValue = true;
 
-    paint(mouse.x, mouse.y, true);
+    const value = tool === "erase" ? false : true;
+    paint(mouse.x, mouse.y, value);
   }
 
-  // two pointers
+  /* TWO POINTERS (PAN / PINCH) */
   if (activePointers.size === 2) {
     painting = false;
     panning = true;
@@ -134,45 +167,27 @@ function stopPointer(id) {
   }
 }
 
-canvas.addEventListener(
-  "pointerup",
-  e => stopPointer(e.pointerId)
-);
-
-canvas.addEventListener(
-  "pointercancel",
-  e => stopPointer(e.pointerId)
-);
+canvas.addEventListener("pointerup", (e) => stopPointer(e.pointerId));
+canvas.addEventListener("pointercancel", (e) => stopPointer(e.pointerId));
 
 canvas.addEventListener("pointermove", (e) => {
-
-  if (!activePointers.has(e.pointerId))
-    return;
+  if (!activePointers.has(e.pointerId)) return;
 
   activePointers.set(e.pointerId, {
     x: e.clientX,
     y: e.clientY,
   });
 
-  mouse = screenToWorld(
-    e.clientX,
-    e.clientY
-  );
+  mouse = screenToWorld(e.clientX, e.clientY);
 
-  // paint
-  if (
-    activePointers.size === 1 &&
-    painting &&
-    paused
-  ) {
-    paint(mouse.x, mouse.y, paintValue);
+  /* PAINT */
+  if (activePointers.size === 1 && painting && paused) {
+    const value = tool === "erase" ? false : true;
+    paint(mouse.x, mouse.y, value);
   }
 
-  // pan + pinch zoom
-  if (
-    activePointers.size === 2 &&
-    panning
-  ) {
+  /* PAN / PINCH */
+  if (activePointers.size === 2 && panning) {
     const pts = [...activePointers.values()];
 
     const center = {
@@ -180,32 +195,17 @@ canvas.addEventListener("pointermove", (e) => {
       y: (pts[0].y + pts[1].y) / 2,
     };
 
-    cameraX -=
-      (center.x - lastCenter.x) / zoom;
-
-    cameraY -=
-      (center.y - lastCenter.y) / zoom;
+    const before = screenToWorld(center.x, center.y);
 
     const dist = Math.hypot(
       pts[1].x - pts[0].x,
       pts[1].y - pts[0].y
     );
 
-    const before = screenToWorld(
-      center.x,
-      center.y
-    );
-
     zoom *= dist / pinchDistance;
-    zoom = Math.max(
-      0.05,
-      Math.min(80, zoom)
-    );
+    zoom = Math.max(0.05, Math.min(80, zoom));
 
-    const after = screenToWorld(
-      center.x,
-      center.y
-    );
+    const after = screenToWorld(center.x, center.y);
 
     cameraX += before.x - after.x;
     cameraY += before.y - after.y;
@@ -215,91 +215,61 @@ canvas.addEventListener("pointermove", (e) => {
   }
 });
 
-// ---------------- KEYBOARD ----------------
-window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    ghost = null;
-    saveMode = false;
+/* =========================================================
+   LEGACY MOUSE SYSTEM (PRESERVED)
+   ========================================================= */
+/*
+window.addEventListener("mousemove", (e) => {
+  mouse = screenToWorld(e.clientX, e.clientY);
+
+  if (panning) {
+    cameraX -= (e.clientX - lastX) / zoom;
+    cameraY -= (e.clientY - lastY) / zoom;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
   }
 
-  if (e.key === "v") tool = "pan";
-  if (e.key === "b") tool = "paint";
+  if (painting && paused) {
+    paint(mouse.x, mouse.y, true);
+  }
 });
 
-// ---------------- ZOOM ----------------
-canvas.addEventListener("wheel", (e) => {
-  e.preventDefault();
+canvas.addEventListener("mousedown", (e) => {
+  mouse = screenToWorld(e.clientX, e.clientY);
 
-  const before = screenToWorld(e.clientX, e.clientY);
+  if (e.button === 0) {
+    paint(mouse.x, mouse.y, true);
+  }
 
-  zoom *= e.deltaY < 0 ? 1.1 : 0.9;
-  zoom = Math.min(80, Math.max(0.05, zoom));
-
-  const after = screenToWorld(e.clientX, e.clientY);
-
-  cameraX += before.x - after.x;
-  cameraY += before.y - after.y;
+  if (e.button === 2) {
+    paint(mouse.x, mouse.y, false);
+  }
 });
+*/
 
-// ---------------- CORE ACTIONS ----------------
+/* =========================================================
+   CORE ACTIONS
+   ========================================================= */
 function paint(x, y, value) {
   ws.send(JSON.stringify({ type: "set", x, y, value }));
 }
 
 function placeGhost(pos) {
-  for (const p of ghost) {
-    ws.send(
-      JSON.stringify({
-        type: "set",
-        x: pos.x + p.x,
-        y: pos.y + p.y,
-        value: true,
-      }),
-    );
+  if (tool === "erase") {
+    for (const p of ghost) {
+      paint(pos.x + p.x, pos.y + p.y, false);
+    }
+  } else {
+    for (const p of ghost) {
+      paint(pos.x + p.x, pos.y + p.y, true);
+    }
   }
 }
 
-function rotatePoints90(points) {
-  return points.map(p => ({
-    x: p.y,
-    y: -p.x,
-  }));
-}
-
-window.rotatePattern = function () {
-  if (!ghost) return;
-
-  ghost = rotatePoints90(ghost);
-
-  let minX = Infinity, minY = Infinity;
-
-  for (const p of ghost) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-  }
-
-  ghost = ghost.map(p => ({
-    x: p.x - minX,
-    y: p.y - minY,
-  }));
-};
-
-window.deletePattern = async function () {
-  const name = select.value;
-  if (!name) return;
-
-  const ok = confirm(`Delete pattern "${name}"? This cannot be undone.`);
-  if (!ok) return;
-
-  await fetch(`/deletePattern?name=${encodeURIComponent(name)}`, {
-    method: "DELETE",
-  });
-
-  ghost = null;
-  await refreshPatterns();
-};
-
-// ---------------- SAVE PATTERN ----------------
+/* =========================================================
+   SAVE / LOAD
+   ========================================================= */
 window.savePattern = () => {
   saveMode = true;
   selectionStart = null;
@@ -309,6 +279,25 @@ window.savePattern = () => {
   alert("Click FIRST corner, then SECOND corner.");
 };
 
+function handleSaveSelection(mouse) {
+  if (!selectionStart) {
+    selectionStart = mouse;
+    return;
+  }
+
+  selectionEnd = mouse;
+
+  pendingPatternName = prompt("Pattern name?");
+  if (!pendingPatternName) {
+    saveMode = false;
+    selectionStart = null;
+    selectionEnd = null;
+    return;
+  }
+
+  finishPatternSave();
+}
+
 async function finishPatternSave() {
   const minX = Math.min(selectionStart.x, selectionEnd.x);
   const maxX = Math.max(selectionStart.x, selectionEnd.x);
@@ -316,8 +305,16 @@ async function finishPatternSave() {
   const maxY = Math.max(selectionStart.y, selectionEnd.y);
 
   const selected = cells
-    .filter((c) => c.x >= minX && c.x <= maxX && c.y >= minY && c.y <= maxY)
-    .map((c) => ({ x: c.x - minX, y: c.y - minY }));
+    .filter(c =>
+      c.x >= minX &&
+      c.x <= maxX &&
+      c.y >= minY &&
+      c.y <= maxY
+    )
+    .map(c => ({
+      x: c.x - minX,
+      y: c.y - minY,
+    }));
 
   if (!selected.length) {
     alert("No cells in selection!");
@@ -341,7 +338,9 @@ async function finishPatternSave() {
   refreshPatterns();
 }
 
-// ---------------- LOAD ----------------
+/* =========================================================
+   PATTERNS
+   ========================================================= */
 async function refreshPatterns() {
   const res = await fetch("/patterns");
   patterns = await res.json();
@@ -355,6 +354,7 @@ async function refreshPatterns() {
     select.appendChild(opt);
   }
 }
+
 refreshPatterns();
 
 window.loadPattern = async () => {
@@ -364,16 +364,18 @@ window.loadPattern = async () => {
   const res = await fetch(`/load?name=${name}`);
   const data = await res.json();
 
-  const minX = Math.min(...data.map((p) => p.x));
-  const minY = Math.min(...data.map((p) => p.y));
+  const minX = Math.min(...data.map(p => p.x));
+  const minY = Math.min(...data.map(p => p.y));
 
-  ghost = data.map((p) => ({
+  ghost = data.map(p => ({
     x: p.x - minX,
     y: p.y - minY,
   }));
 };
 
-// ---------------- COORDS ----------------
+/* =========================================================
+   COORDS
+   ========================================================= */
 function screenToWorld(x, y) {
   return {
     x: Math.floor(cameraX + (x - canvas.width / 2) / zoom),
@@ -388,28 +390,29 @@ function worldToScreen(x, y) {
   };
 }
 
-// ---------------- UI BUTTONS ----------------
-pauseBtn.onclick = () => ws.send(JSON.stringify({ type: "pause" }));
-resetBtn.onclick = () => ws.send(JSON.stringify({ type: "reset" }));
+/* =========================================================
+   UI BUTTONS
+   ========================================================= */
+pauseBtn.onclick = () =>
+  ws.send(JSON.stringify({ type: "pause" }));
 
-stepBtn.onclick = () => {
-  ws.send(JSON.stringify({ type: "step" }));
-};
-
-clearBtn.onclick = () => {
+resetBtn.onclick = () =>
   ws.send(JSON.stringify({ type: "reset" }));
-};
+
+stepBtn.onclick = () =>
+  ws.send(JSON.stringify({ type: "step" }));
+
+clearBtn.onclick = () =>
+  ws.send(JSON.stringify({ type: "reset" }));
 
 randomBtn.onclick = () => {
   for (let i = 0; i < 300; i++) {
-    ws.send(
-      JSON.stringify({
-        type: "set",
-        x: Math.floor(cameraX + (Math.random() - 0.5) * 60),
-        y: Math.floor(cameraY + (Math.random() - 0.5) * 60),
-        value: true,
-      }),
-    );
+    ws.send(JSON.stringify({
+      type: "set",
+      x: Math.floor(cameraX + (Math.random() - 0.5) * 60),
+      y: Math.floor(cameraY + (Math.random() - 0.5) * 60),
+      value: true,
+    }));
   }
 };
 
@@ -421,32 +424,12 @@ speedRange.addEventListener("change", () => {
   });
 });
 
-// ---------------- DRAW ORIGIN ----------------
-function drawOrigin() {
-  const o = worldToScreen(0, 0);
-
-  ctx.strokeStyle = "#ff3b3b";
-  ctx.lineWidth = 1;
-
-  ctx.beginPath();
-  ctx.moveTo(o.x, o.y - 30);
-  ctx.lineTo(o.x, o.y + 30);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(o.x - 30, o.y);
-  ctx.lineTo(o.x + 30, o.y);
-  ctx.stroke();
-
-  ctx.fillStyle = "#ff3b3b";
-  ctx.fillRect(o.x - 2, o.y - 2, 4, 4);
-}
-
-// ---------------- RENDER LOOP ----------------
+/* =========================================================
+   RENDER LOOP
+   ========================================================= */
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // grid
   if (zoom > 4) {
     ctx.strokeStyle = "#222";
 
@@ -492,7 +475,7 @@ function render() {
 
     for (const p of ghost) {
       const s = worldToScreen(mouse.x + p.x, mouse.y + p.y);
-      ctx.fillRect(s.x, s.y, zoom, zoom);
+      ctx.fillRect(s.x, s.y, Math.max(1, zoom), Math.max(1, zoom));
     }
   }
 
@@ -508,8 +491,6 @@ function render() {
     Camera: (${cameraX.toFixed(1)}, ${cameraY.toFixed(1)})<br/>
     Zoom: ${zoom.toFixed(2)}x
   `;
-
-  drawOrigin();
 
   requestAnimationFrame(render);
 }
