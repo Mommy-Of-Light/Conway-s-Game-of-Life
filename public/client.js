@@ -21,7 +21,7 @@ resize();
 window.addEventListener("resize", resize);
 
 /* =========================================================
-   WEBSOCKET (WS/WSS FIX)
+   WEBSOCKET
    ========================================================= */
 const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
 const ws = new WebSocket(`${wsProtocol}//${location.host}`);
@@ -47,7 +47,7 @@ let lastCenter = null;
 let mouse = { x: 0, y: 0 };
 
 /* =========================================================
-   TOOL SYSTEM (NEW)
+   TOOL SYSTEM
    ========================================================= */
 let tool = "draw"; // draw | erase
 
@@ -70,6 +70,11 @@ let patterns = [];
 let ghost = null;
 
 /* =========================================================
+   NEW: GHOST PLACEMENT STATE FIX
+   ========================================================= */
+let placingGhost = false;
+
+/* =========================================================
    UI
    ========================================================= */
 const select = document.getElementById("patternSelect");
@@ -83,7 +88,7 @@ const speedRange = document.getElementById("speedRange");
 const hud = document.getElementById("hud");
 
 /* =========================================================
-   WEBSOCKET STATE UPDATE
+   WEBSOCKET STATE
    ========================================================= */
 ws.onmessage = (e) => {
   const msg = JSON.parse(e.data);
@@ -97,7 +102,7 @@ ws.onmessage = (e) => {
 };
 
 /* =========================================================
-   POINTER INPUT (PRIMARY)
+   POINTER INPUT
    ========================================================= */
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
@@ -124,8 +129,9 @@ canvas.addEventListener("pointerdown", (e) => {
 
     if (!paused) return;
 
+    /* GHOST MODE → now only activates, does NOT place */
     if (ghost) {
-      placeGhost(mouse);
+      placingGhost = true;
       return;
     }
 
@@ -135,7 +141,7 @@ canvas.addEventListener("pointerdown", (e) => {
     paint(mouse.x, mouse.y, value);
   }
 
-  /* TWO POINTERS (PAN / PINCH) */
+  /* PINCH / PAN */
   if (activePointers.size === 2) {
     painting = false;
     panning = true;
@@ -162,8 +168,17 @@ function stopPointer(id) {
     pinchDistance = null;
   }
 
+  /* =========================================================
+     FIX: PLACE GHOST ON RELEASE ONLY
+     ========================================================= */
   if (activePointers.size === 0) {
     painting = false;
+
+    if (placingGhost && ghost) {
+      placeGhost(mouse);
+      ghost = null;
+      placingGhost = false;
+    }
   }
 }
 
@@ -216,7 +231,7 @@ canvas.addEventListener("pointermove", (e) => {
 });
 
 /* =========================================================
-   LEGACY MOUSE SYSTEM (PRESERVED)
+   LEGACY MOUSE SYSTEM (KEPT)
    ========================================================= */
 /*
 window.addEventListener("mousemove", (e) => {
@@ -255,6 +270,9 @@ function paint(x, y, value) {
   ws.send(JSON.stringify({ type: "set", x, y, value }));
 }
 
+/* =========================================================
+   GHOST PLACEMENT
+   ========================================================= */
 function placeGhost(pos) {
   if (tool === "erase") {
     for (const p of ghost) {
@@ -268,7 +286,7 @@ function placeGhost(pos) {
 }
 
 /* =========================================================
-   SAVE / LOAD
+   SAVE SYSTEM
    ========================================================= */
 window.savePattern = () => {
   saveMode = true;
