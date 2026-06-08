@@ -396,16 +396,16 @@ async function finishPatternSave(name) {
 /* =========================
    LEGACY CONTROLS (RESTORED)
 ========================= */
-// addEventListener("mousemove", (e) => {
-//   mouse = screenToWorld(e.clientX, e.clientY);
-// });
+  // addEventListener("mousemove", (e) => {
+  //   mouse = screenToWorld(e.clientX, e.clientY);
+  // });
 
-// addEventListener("mousedown", (e) => {
-//   mouse = screenToWorld(e.clientX, e.clientY);
+  // addEventListener("mousedown", (e) => {
+  //   mouse = screenToWorld(e.clientX, e.clientY);
 
-//   if (e.button === 0) paint(mouse.x, mouse.y, true);
-//   if (e.button === 2) paint(mouse.x, mouse.y, false);
-// });
+  //   if (e.button === 0) paint(mouse.x, mouse.y, true);
+  //   if (e.button === 2) paint(mouse.x, mouse.y, false);
+  // });
 
 /* =========================
    RENDER LOOP

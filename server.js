@@ -139,4 +139,4 @@ wss.on("connection", ws=>{
 
 startLoop();
 
-server.listen(3001, ()=>console.log("http://localhost:3001"));
+server.listen(3000, ()=>console.log("http://localhost:3000"));
