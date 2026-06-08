@@ -24,7 +24,7 @@ let panning = false;
 let pinchDistance = null;
 
 /* =========================
-   DIRTY FLAGS
+   DIRTY FLAG
 ========================= */
 let viewDirty = true;
 
@@ -36,17 +36,22 @@ let tool = "draw";
 const drawEraseBtn = document.getElementById("drawEraseBtn");
 
 drawEraseBtn.onclick = () => {
-  tool = tool === "draw" ? "erase" : tool === "erase" ? "move" : "draw";
+  tool = tool === "draw"
+    ? "erase"
+    : tool === "erase"
+      ? "move"
+      : "draw";
 
   drawEraseBtn.textContent =
     tool === "draw" ? "✏️ Draw" :
-    tool === "erase" ? "🧹 Erase" : "🧭 Move";
+    tool === "erase" ? "🧹 Erase" :
+    "🧭 Move";
 };
 
 const isMoveMode = () => tool === "move";
 
 /* =========================
-   PATTERNS (IMPORTANT MISSING PART)
+   PATTERNS
 ========================= */
 let saveMode = false;
 let selectionStart = null;
@@ -55,7 +60,9 @@ let selectionEnd = null;
 let ghost = null;
 let placingPattern = false;
 
-/* UI */
+/* =========================
+   UI
+========================= */
 const select = document.getElementById("patternSelect");
 const pauseBtn = document.getElementById("playPauseBtn");
 const stepBtn = document.getElementById("stepBtn");
@@ -90,19 +97,51 @@ ws.onmessage = (e) => {
 function resize() {
   const dpr = isMobile ? 1.25 : 2;
 
-  canvas.width = window.innerWidth * dpr;
-  canvas.height = window.innerHeight * dpr;
+  canvas.width = innerWidth * dpr;
+  canvas.height = innerHeight * dpr;
 
-  canvas.style.width = window.innerWidth + "px";
-  canvas.style.height = window.innerHeight + "px";
+  canvas.style.width = innerWidth + "px";
+  canvas.style.height = innerHeight + "px";
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   viewDirty = true;
 }
-
 resize();
-window.addEventListener("resize", resize);
+addEventListener("resize", resize);
+
+/* =========================
+   COORDS
+========================= */
+function screenToWorld(x, y) {
+  return {
+    x: Math.floor(cameraX + (x - canvas.width / 2) / zoom),
+    y: Math.floor(cameraY + (y - canvas.height / 2) / zoom),
+  };
+}
+
+function worldToScreen(x, y) {
+  return {
+    x: (x - cameraX) * zoom + canvas.width / 2,
+    y: (y - cameraY) * zoom + canvas.height / 2,
+  };
+}
+
+/* =========================
+   CORE
+========================= */
+function paint(x, y, value) {
+  ws.send(JSON.stringify({ type: "set", x, y, value }));
+}
+
+/* =========================
+   GHOST
+========================= */
+function placeGhost(pos) {
+  for (const p of ghost) {
+    paint(pos.x + p.x, pos.y + p.y, tool !== "erase");
+  }
+}
 
 /* =========================
    POINTER INPUT
@@ -126,12 +165,11 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
 
+  /* ❌ NO DRAWING HERE ANYMORE */
+
   if (activePointers.size === 1) {
     if (!paused || isMoveMode()) return;
-
     painting = true;
-    paint(mouse.x, mouse.y, tool !== "erase");
-    viewDirty = true;
   }
 
   if (activePointers.size === 2) {
@@ -196,7 +234,7 @@ function stopPointer(id) {
 
     viewDirty = true;
   }
-}
+};
 
 canvas.addEventListener("pointerup", e => stopPointer(e.pointerId));
 canvas.addEventListener("pointercancel", e => stopPointer(e.pointerId));
@@ -221,84 +259,43 @@ canvas.addEventListener("wheel", (e) => {
 }, { passive: false });
 
 /* =========================
-   CORE
+   BUTTONS
 ========================= */
-function paint(x, y, value) {
-  ws.send(JSON.stringify({ type: "set", x, y, value }));
-}
+pauseBtn.onclick = () => ws.send(JSON.stringify({ type: "pause" }));
+resetBtn.onclick = () => ws.send(JSON.stringify({ type: "reset" }));
+stepBtn.onclick = () => ws.send(JSON.stringify({ type: "step" }));
+clearBtn.onclick = () => ws.send(JSON.stringify({ type: "reset" }));
 
-/* =========================
-   GHOST
-========================= */
-function placeGhost(pos) {
-  for (const p of ghost) {
-    paint(pos.x + p.x, pos.y + p.y, tool !== "erase");
+randomBtn.onclick = () => {
+  for (let i = 0; i < 300; i++) {
+    ws.send(JSON.stringify({
+      type: "set",
+      x: Math.floor(cameraX + (Math.random() - 0.5) * 60),
+      y: Math.floor(cameraY + (Math.random() - 0.5) * 60),
+      value: true
+    }));
   }
-}
-
-/* =========================
-   SAVE PATTERN
-========================= */
-window.savePattern = () => {
-  saveMode = true;
-  selectionStart = null;
-  selectionEnd = null;
-  alert("Click FIRST corner, then SECOND corner.");
 };
 
-function handleSaveSelection(mouse) {
-  if (!selectionStart) {
-    selectionStart = mouse;
-    return;
-  }
-
-  selectionEnd = mouse;
-
-  const name = prompt("Pattern name?");
-  if (!name) {
-    saveMode = false;
-    return;
-  }
-
-  finishPatternSave(name);
-}
-
-async function finishPatternSave(name) {
-  const minX = Math.min(selectionStart.x, selectionEnd.x);
-  const maxX = Math.max(selectionStart.x, selectionEnd.x);
-  const minY = Math.min(selectionStart.y, selectionEnd.y);
-
-  const selected = cells
-    .filter(c =>
-      c.x >= minX &&
-      c.x <= maxX &&
-      c.y >= minY &&
-      c.y <= maxY
-    )
-    .map(c => ({
-      x: c.x - minX,
-      y: c.y - minY
-    }));
-
-  await fetch("/savePattern", {
+/* =========================
+   SPEED
+========================= */
+speedRange.addEventListener("change", () => {
+  fetch("/changeRefreshTime", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, cells: selected })
+    body: JSON.stringify({ time: speedRange.value })
   });
-
-  saveMode = false;
-  refreshPatterns();
-}
+});
 
 /* =========================
-   PATTERNS (FULL RESTORE FIX)
+   PATTERNS
 ========================= */
 async function refreshPatterns() {
   const res = await fetch("/patterns");
   const patterns = await res.json();
 
   select.innerHTML = "";
-
   for (const p of patterns) {
     const opt = document.createElement("option");
     opt.value = p;
@@ -306,7 +303,6 @@ async function refreshPatterns() {
     select.appendChild(opt);
   }
 }
-
 refreshPatterns();
 
 window.loadPattern = async () => {
@@ -342,43 +338,82 @@ window.deletePattern = async () => {
   if (!name) return;
 
   await fetch(`/deletePattern?name=${name}`, { method: "DELETE" });
-
   refreshPatterns();
 };
 
 /* =========================
-   COORDS
+   SAVE PATTERN
 ========================= */
-function screenToWorld(x, y) {
-  return {
-    x: Math.floor(cameraX + (x - canvas.width / 2) / zoom),
-    y: Math.floor(cameraY + (y - canvas.height / 2) / zoom),
-  };
+window.savePattern = () => {
+  saveMode = true;
+  selectionStart = null;
+  selectionEnd = null;
+  alert("Click FIRST corner, then SECOND corner.");
+};
+
+function handleSaveSelection(mouse) {
+  if (!selectionStart) {
+    selectionStart = mouse;
+    return;
+  }
+
+  selectionEnd = mouse;
+
+  const name = prompt("Pattern name?");
+  if (!name) {
+    saveMode = false;
+    return;
+  }
+
+  finishPatternSave(name);
 }
 
-function worldToScreen(x, y) {
-  return {
-    x: (x - cameraX) * zoom + canvas.width / 2,
-    y: (y - cameraY) * zoom + canvas.height / 2,
-  };
+async function finishPatternSave(name) {
+  const minX = Math.min(selectionStart.x, selectionEnd.x);
+  const maxX = Math.max(selectionStart.x, selectionEnd.x);
+  const minY = Math.min(selectionStart.y, selectionEnd.y);
+
+  const selected = cells
+    .filter(c =>
+      c.x >= minX && c.x <= maxX &&
+      c.y >= minY && c.y <= maxY
+    )
+    .map(c => ({
+      x: c.x - minX,
+      y: c.y - minY
+    }));
+
+  await fetch("/savePattern", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, cells: selected })
+  });
+
+  saveMode = false;
+  refreshPatterns();
 }
 
 /* =========================
-   BUTTONS
+   LEGACY CONTROLS (RESTORED)
 ========================= */
-pauseBtn.onclick = () => ws.send(JSON.stringify({ type: "pause" }));
-resetBtn.onclick = () => ws.send(JSON.stringify({ type: "reset" }));
-stepBtn.onclick = () => ws.send(JSON.stringify({ type: "step" }));
-clearBtn.onclick = () => ws.send(JSON.stringify({ type: "reset" }));
+// addEventListener("mousemove", (e) => {
+//   mouse = screenToWorld(e.clientX, e.clientY);
+// });
+
+// addEventListener("mousedown", (e) => {
+//   mouse = screenToWorld(e.clientX, e.clientY);
+
+//   if (e.button === 0) paint(mouse.x, mouse.y, true);
+//   if (e.button === 2) paint(mouse.x, mouse.y, false);
+// });
 
 /* =========================
-   RENDER LOOP (STABLE)
+   RENDER LOOP
 ========================= */
 function render() {
   requestAnimationFrame(render);
 
   if (!viewDirty && isMobile) return;
-
   viewDirty = false;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
