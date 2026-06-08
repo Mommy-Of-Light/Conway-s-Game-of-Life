@@ -264,7 +264,7 @@ canvas.addEventListener(
   (e) => {
     e.preventDefault();
 
-     if (placementLock) return;
+    if (placementLock) return;
 
     const before = screenToWorld(e.clientX, e.clientY);
 
@@ -376,6 +376,7 @@ window.deletePattern = async () => {
    SAVE PATTERN (FIXED MOBILE)
 ========================= */
 window.savePattern = () => {
+  placementLock = true;
   saveMode = true;
   saveStep = 0;
   selectionStart = null;
@@ -412,6 +413,7 @@ async function handleSaveFinish() {
 
   saveMode = false;
   saveStep = 0;
+  placementLock = false;
   refreshPatterns();
 }
 
