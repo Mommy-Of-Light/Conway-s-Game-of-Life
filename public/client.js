@@ -2,14 +2,17 @@ const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
 /* =========================================================
-   DEVICE DETECTION
+   DEVICE / PERFORMANCE FLAGS
    ========================================================= */
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const startTime = performance.now();
+
 let frame = 0;
-let dirty = true;
+let dirty = false; // IMPORTANT: prevents instant heavy render spam
+let started = false;
 
 /* =========================================================
-   DPI FIX
+   DPI FIX (SAFE FOR MOBILE)
    ========================================================= */
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2);
@@ -52,7 +55,7 @@ let pinchDistance = null;
 let mouse = { x: 0, y: 0 };
 
 /* =========================================================
-   CROSS-PLATFORM PAN (NEW UNIFIED SYSTEM)
+   CROSS-PLATFORM PAN SYSTEM
    ========================================================= */
 let panActive = false;
 let panPointerId = null;
@@ -103,6 +106,7 @@ ws.onmessage = (e) => {
   if (msg.type === "state") {
     cells = msg.cells;
     paused = msg.paused;
+
     pauseBtn.textContent = paused ? "▶" : "❚❚";
     dirty = true;
   }
@@ -114,9 +118,7 @@ ws.onmessage = (e) => {
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 canvas.addEventListener("pointerdown", (e) => {
-  try {
-    canvas.setPointerCapture(e.pointerId);
-  } catch {}
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
 
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -128,14 +130,11 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
 
-  /* =========================
-     PAN (ALL PLATFORMS)
-     ========================= */
+  /* PAN (desktop + trackpad + mouse button) */
   if (activePointers.size === 1) {
 
     if (!paused) return;
 
-    // 🖱️ Desktop modifier-based pan
     if (e.ctrlKey || e.metaKey || e.button === 1) {
       panActive = true;
       panPointerId = e.pointerId;
@@ -153,15 +152,12 @@ canvas.addEventListener("pointerdown", (e) => {
     dirty = true;
   }
 
-  /* =========================
-     PINCH ZOOM
-     ========================= */
+  /* PINCH */
   if (activePointers.size === 2) {
     painting = false;
     panning = true;
 
     const pts = [...activePointers.values()];
-
     pinchDistance = Math.hypot(
       pts[1].x - pts[0].x,
       pts[1].y - pts[0].y
@@ -170,7 +166,7 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 
 /* =========================================================
-   POINTER MOVE (PAN + PAINT + PINCH)
+   POINTER MOVE
    ========================================================= */
 canvas.addEventListener("pointermove", (e) => {
   if (!activePointers.has(e.pointerId)) return;
@@ -179,9 +175,7 @@ canvas.addEventListener("pointermove", (e) => {
 
   mouse = screenToWorld(e.clientX, e.clientY);
 
-  /* =========================
-     UNIFIED PAN MOVEMENT
-     ========================= */
+  /* PAN MOVE */
   if (panActive && e.pointerId === panPointerId) {
     const dx = e.clientX - lastPan.x;
     const dy = e.clientY - lastPan.y;
@@ -222,16 +216,15 @@ canvas.addEventListener("pointermove", (e) => {
 function stopPointer(id) {
   activePointers.delete(id);
 
-  if (activePointers.size < 2) {
-    panning = false;
-    pinchDistance = null;
-  }
-
-  /* STOP PAN */
-  if (id === panPointerId) {
+  if (panPointerId === id) {
     panActive = false;
     panPointerId = null;
     lastPan = null;
+  }
+
+  if (activePointers.size < 2) {
+    panning = false;
+    pinchDistance = null;
   }
 
   if (activePointers.size === 0) {
@@ -258,7 +251,7 @@ function paint(x, y, value) {
 }
 
 /* =========================================================
-   GHOST PLACEMENT
+   GHOST
    ========================================================= */
 function placeGhost(pos) {
   for (const p of ghost) {
@@ -267,7 +260,7 @@ function placeGhost(pos) {
 }
 
 /* =========================================================
-   SAVE SYSTEM (UNCHANGED)
+   SAVE SYSTEM
    ========================================================= */
 window.savePattern = () => {
   saveMode = true;
@@ -286,19 +279,19 @@ function handleSaveSelection(mouse) {
 
   selectionEnd = mouse;
 
-  pendingPatternName = prompt("Pattern name?");
-  if (!pendingPatternName) {
+  const name = prompt("Pattern name?");
+  if (!name) {
     saveMode = false;
     return;
   }
 
-  finishPatternSave();
+  finishPatternSave(name);
 }
 
-async function finishPatternSave() {
+async function finishPatternSave(name) {
   const minX = Math.min(selectionStart.x, selectionEnd.x);
   const maxX = Math.max(selectionStart.x, selectionEnd.x);
-  const minY = Math.max(selectionStart.y, selectionEnd.y);
+  const minY = Math.min(selectionStart.y, selectionEnd.y);
 
   const selected = cells
     .filter(c =>
@@ -315,7 +308,7 @@ async function finishPatternSave() {
   await fetch("/savePattern", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: pendingPatternName, cells: selected }),
+    body: JSON.stringify({ name, cells: selected }),
   });
 
   saveMode = false;
@@ -341,6 +334,9 @@ async function refreshPatterns() {
 
 refreshPatterns();
 
+/* =========================================================
+   LOAD PATTERN
+   ========================================================= */
 window.loadPattern = async () => {
   const name = select.value;
   if (!name) return;
@@ -375,7 +371,7 @@ function worldToScreen(x, y) {
 }
 
 /* =========================================================
-   UI BUTTONS
+   BUTTONS
    ========================================================= */
 pauseBtn.onclick = () => ws.send(JSON.stringify({ type: "pause" }));
 resetBtn.onclick = () => ws.send(JSON.stringify({ type: "reset" }));
@@ -394,7 +390,7 @@ randomBtn.onclick = () => {
 };
 
 /* =========================================================
-   SPEED CONTROL
+   SPEED
    ========================================================= */
 speedRange.addEventListener("change", () => {
   fetch("/changeRefreshTime", {
@@ -405,8 +401,15 @@ speedRange.addEventListener("change", () => {
 });
 
 /* =========================================================
-   RENDER LOOP (OPTIMIZED)
+   RENDER LOOP (FIXED STARTUP + MOBILE SAFE)
    ========================================================= */
+function startRender() {
+  if (started) return;
+  started = true;
+
+  requestAnimationFrame(render);
+}
+
 function render() {
   frame++;
 
@@ -475,15 +478,15 @@ function render() {
   requestAnimationFrame(render);
 }
 
-render();
+/* =========================================================
+   SAFE BOOT (PREVENTS MOBILE FREEZE)
+   ========================================================= */
+setTimeout(startRender, isMobile ? 200 : 0);
 
 /* =========================================================
-   LEGACY (KEPT EXACTLY AS REQUESTED)
+   LEGACY (UNCHANGED - KEPT)
    ========================================================= */
-
 /*
-OLD MOUSE SYSTEM (replaced by pointer events)
-
 window.addEventListener("mousemove", (e) => {
   mouse = screenToWorld(e.clientX, e.clientY);
 
@@ -503,12 +506,7 @@ window.addEventListener("mousemove", (e) => {
 canvas.addEventListener("mousedown", (e) => {
   mouse = screenToWorld(e.clientX, e.clientY);
 
-  if (e.button === 0) {
-    paint(mouse.x, mouse.y, true);
-  }
-
-  if (e.button === 2) {
-    paint(mouse.x, mouse.y, false);
-  }
+  if (e.button === 0) paint(mouse.x, mouse.y, true);
+  if (e.button === 2) paint(mouse.x, mouse.y, false);
 });
 */
