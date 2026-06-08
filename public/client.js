@@ -2,17 +2,16 @@ const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
 /* =========================================================
-   DEVICE / PERFORMANCE FLAGS
+   DEVICE FLAGS
    ========================================================= */
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-const startTime = performance.now();
 
 let frame = 0;
-let dirty = false; // IMPORTANT: prevents instant heavy render spam
+let dirty = false;
 let started = false;
 
 /* =========================================================
-   DPI FIX (SAFE FOR MOBILE)
+   DPI FIX
    ========================================================= */
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2);
@@ -55,11 +54,17 @@ let pinchDistance = null;
 let mouse = { x: 0, y: 0 };
 
 /* =========================================================
-   CROSS-PLATFORM PAN SYSTEM
+   DESKTOP PAN
    ========================================================= */
 let panActive = false;
 let panPointerId = null;
 let lastPan = null;
+
+/* =========================================================
+   MOBILE PAN (FIX)
+   ========================================================= */
+let touchPan = false;
+let lastTouch = null;
 
 /* =========================================================
    TOOL SYSTEM
@@ -79,7 +84,6 @@ drawEraseBtn.onclick = () => {
 let saveMode = false;
 let selectionStart = null;
 let selectionEnd = null;
-let pendingPatternName = null;
 
 let ghost = null;
 let placingGhost = false;
@@ -113,7 +117,7 @@ ws.onmessage = (e) => {
 };
 
 /* =========================================================
-   POINTER INPUT (UNIFIED)
+   POINTER DOWN
    ========================================================= */
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
@@ -130,11 +134,24 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
 
-  /* PAN (desktop + trackpad + mouse button) */
   if (activePointers.size === 1) {
 
     if (!paused) return;
 
+    const isTouch = e.pointerType === "touch";
+
+    /* =====================================================
+       MOBILE PAN FIX (THIS WAS MISSING)
+       ===================================================== */
+    if (isTouch) {
+      touchPan = true;
+      lastTouch = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
+    /* =====================================================
+       DESKTOP PAN
+       ===================================================== */
     if (e.ctrlKey || e.metaKey || e.button === 1) {
       panActive = true;
       panPointerId = e.pointerId;
@@ -142,6 +159,7 @@ canvas.addEventListener("pointerdown", (e) => {
       return;
     }
 
+    /* DRAW */
     if (ghost) {
       placingGhost = true;
       return;
@@ -175,7 +193,9 @@ canvas.addEventListener("pointermove", (e) => {
 
   mouse = screenToWorld(e.clientX, e.clientY);
 
-  /* PAN MOVE */
+  /* =====================================================
+     DESKTOP PAN
+     ===================================================== */
   if (panActive && e.pointerId === panPointerId) {
     const dx = e.clientX - lastPan.x;
     const dy = e.clientY - lastPan.y;
@@ -184,6 +204,20 @@ canvas.addEventListener("pointermove", (e) => {
     cameraY -= dy / zoom;
 
     lastPan = { x: e.clientX, y: e.clientY };
+    dirty = true;
+  }
+
+  /* =====================================================
+     MOBILE PAN FIX
+     ===================================================== */
+  if (touchPan && e.pointerType === "touch") {
+    const dx = e.clientX - lastTouch.x;
+    const dy = e.clientY - lastTouch.y;
+
+    cameraX -= dx / zoom;
+    cameraY -= dy / zoom;
+
+    lastTouch = { x: e.clientX, y: e.clientY };
     dirty = true;
   }
 
@@ -227,7 +261,11 @@ function stopPointer(id) {
     pinchDistance = null;
   }
 
+  /* STOP MOBILE PAN */
   if (activePointers.size === 0) {
+    touchPan = false;
+    lastTouch = null;
+
     painting = false;
 
     if (placingGhost && ghost) {
@@ -266,8 +304,6 @@ window.savePattern = () => {
   saveMode = true;
   selectionStart = null;
   selectionEnd = null;
-  pendingPatternName = null;
-
   alert("Click FIRST corner, then SECOND corner.");
 };
 
@@ -291,7 +327,7 @@ function handleSaveSelection(mouse) {
 async function finishPatternSave(name) {
   const minX = Math.min(selectionStart.x, selectionEnd.x);
   const maxX = Math.max(selectionStart.x, selectionEnd.x);
-  const minY = Math.min(selectionStart.y, selectionEnd.y);
+  const minY = Math.max(selectionStart.y, selectionEnd.y);
 
   const selected = cells
     .filter(c =>
@@ -334,9 +370,6 @@ async function refreshPatterns() {
 
 refreshPatterns();
 
-/* =========================================================
-   LOAD PATTERN
-   ========================================================= */
 window.loadPattern = async () => {
   const name = select.value;
   if (!name) return;
@@ -401,12 +434,11 @@ speedRange.addEventListener("change", () => {
 });
 
 /* =========================================================
-   RENDER LOOP (FIXED STARTUP + MOBILE SAFE)
+   RENDER LOOP (SAFE START)
    ========================================================= */
 function startRender() {
   if (started) return;
   started = true;
-
   requestAnimationFrame(render);
 }
 
@@ -451,7 +483,6 @@ function render() {
   /* GHOST */
   if (ghost && paused) {
     ctx.fillStyle = "rgba(0,255,255,0.4)";
-
     for (const p of ghost) {
       const s = worldToScreen(mouse.x + p.x, mouse.y + p.y);
       ctx.fillRect(s.x, s.y, Math.max(1, zoom), Math.max(1, zoom));
@@ -478,13 +509,10 @@ function render() {
   requestAnimationFrame(render);
 }
 
-/* =========================================================
-   SAFE BOOT (PREVENTS MOBILE FREEZE)
-   ========================================================= */
 setTimeout(startRender, isMobile ? 200 : 0);
 
 /* =========================================================
-   LEGACY (UNCHANGED - KEPT)
+   LEGACY (UNCHANGED)
    ========================================================= */
 /*
 window.addEventListener("mousemove", (e) => {
