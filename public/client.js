@@ -79,9 +79,34 @@ const hud = document.getElementById("hud");
 /* =========================
    WS
 ========================= */
-const ws = new WebSocket(
-  `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`,
-);
+let ws;
+
+function connect() {
+  ws = new WebSocket(
+    `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`
+  );
+
+  ws.onopen = () => {
+    console.log("WS connected");
+  };
+
+  ws.onclose = () => {
+    console.log("WS closed → reconnecting");
+    setTimeout(connect, 1000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "state") {
+      cells = msg.cells;
+      paused = msg.paused;
+    }
+  };
+}
+
+connect();
 
 ws.onmessage = (e) => {
   const msg = JSON.parse(e.data);

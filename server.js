@@ -137,6 +137,30 @@ wss.on("connection", ws=>{
   });
 });
 
+wss.on("connection", ws => {
+  ws.isAlive = true;
+
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
+
+  ws.on("close", () => {
+    ws.isAlive = false;
+  });
+});
+
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 30000);
+
 startLoop();
 
 server.listen(3000, ()=>console.log("http://localhost:3000"));
