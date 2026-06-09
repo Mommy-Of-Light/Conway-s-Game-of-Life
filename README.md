@@ -1,6 +1,6 @@
 # Life Editor
 
-**Version:** 1.0.0.2  
+**Version:** 1.0.1.1  
 A real-time, touch-friendly Conway’s Game of Life editor with live WebSocket synchronization, pattern saving/loading, and advanced canvas interaction (pan, zoom, and pinch support).
 
 ---
@@ -62,13 +62,26 @@ The simulation runs on a shared WebSocket state, meaning all connected clients s
 
 ```
 
-.
-├── server.js        # Express + WebSocket server + simulation logic
-├── client.js        # Canvas renderer + interaction system
-├── index.html       # UI layout
-├── style.css        # Responsive UI styling
-├── patterns/        # Saved pattern JSON files
-
+Conway-s-Game-of-Life/
+|-- Exemples-images/
+|  +-- SpaceShip.png
+|-- patterns*/
+|  |-- 1-2-3.json
+|  |-- 1-2-3-4.json
+|  |-- 101.json
+|  |-- 119P4H1V0.json
+|  |-- 135-degree MWSS-to-G.json
+|  +-- 180-degree kickback.json
+|-- public/
+|  |-- client.js
+|  |-- index.html
+|  +-- style.css
+|-- .gitignore
+|-- LICENSE
+|-- package.json
+|-- package-lock.json
+|-- README.md
++-- server.js
 ```
 
 ---
@@ -146,3 +159,11 @@ For best results:
 ## 📜 License
 
 MIT License — feel free to use, modify, and extend.
+
+## Version History
+
+- **V1.0.1.1**: Mobile performance optimizations, including reduced rendering load and improved touch responsiveness. Removed the bug causing slowdowns on mobile devices when many cells are active. Security patch for WebSocket handling to prevent potential vulnerabilities.
+- **V1.0.1.0**: Added pinch-to-zoom support on mobile devices, improved pattern management UI, and optimized WebSocket synchronization for better performance.
+- **V1.0.0.2**: Initial release with core simulation, interactive editor, pattern saving/loading, and basic mobile support.
+- **V1.0.0.1**: Initial development phase with basic simulation logic and WebSocket setup (not released).
+- **V1.0.0.0**: Project initialization and setup (not released).
