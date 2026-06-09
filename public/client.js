@@ -39,16 +39,44 @@ let viewDirty = true;
 ========================= */
 let tool = "draw";
 
-const drawEraseBtn = document.getElementById("drawEraseBtn");
+const drawBtn = document.getElementById("drawBtn");
+const eraseBtn = document.getElementById("eraseBtn");
+const moveBtn = document.getElementById("moveBtn");
 
-drawEraseBtn.onclick = () => {
+drawBtn.onclick = () => {
   if (placementLock) return; // ❌ LOCKED
-
-  tool = tool === "draw" ? "erase" : tool === "erase" ? "move" : "draw";
-
-  drawEraseBtn.textContent =
-    tool === "draw" ? "✏️ Draw" : tool === "erase" ? "🧹 Erase" : "🧭 Move";
+  tool = "draw";
+  drawBtn.textContent = "✏️ Draw";
+  eraseBtn.textContent = "🧹 Erase";
+  moveBtn.textContent = "🧭 Move";
 };
+
+eraseBtn.onclick = () => {
+  if (placementLock) return; // ❌ LOCKED
+  tool = "erase";
+  drawBtn.textContent = "✏️ Draw";
+  eraseBtn.textContent = "🧹 Erase";
+  moveBtn.textContent = "🧭 Move";
+};
+
+moveBtn.onclick = () => {
+  if (placementLock) return; // ❌ LOCKED
+  tool = "move";
+  drawBtn.textContent = "✏️ Draw";
+  eraseBtn.textContent = "🧹 Erase";
+  moveBtn.textContent = "🧭 Move";
+};
+
+// legacy single button (ignore)
+
+// drawEraseBtn.onclick = () => {
+//   if (placementLock) return; // ❌ LOCKED
+
+//   tool = tool === "draw" ? "erase" : tool === "erase" ? "move" : "draw";
+
+//   drawEraseBtn.textContent =
+//     tool === "draw" ? "✏️ Draw" : tool === "erase" ? "🧹 Erase" : "🧭 Move";
+// };
 
 const isMoveMode = () => tool === "move";
 
@@ -274,7 +302,9 @@ function stopPointer(id) {
     // 🔓 UNLOCK AFTER PLACING
     placementLock = false;
 
-    drawEraseBtn.textContent = "✏️ Draw";
+    drawBtn.textContent = "✏️ Draw";
+    eraseBtn.textContent = "🧹 Erase";
+    moveBtn.textContent = "🧭 Move";
   }
 }
 
@@ -377,7 +407,9 @@ window.loadPattern = async () => {
   placementLock = true;
   tool = "draw";
 
-  drawEraseBtn.textContent = "📦 Place Pattern";
+  drawBtn.textContent = "✏️ Place";
+  eraseBtn.textContent = "🧹 Place";
+  moveBtn.textContent = "🧭 Place";
 };
 
 window.rotatePattern = () => {
